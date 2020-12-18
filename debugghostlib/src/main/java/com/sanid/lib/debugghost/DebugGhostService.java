@@ -2,6 +2,7 @@ package com.sanid.lib.debugghost;
 
 import android.annotation.SuppressLint;
 import android.app.Notification;
+import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
@@ -26,296 +27,327 @@ import com.sanid.lib.debugghost.server.GhostServer;
 
 import java.util.ArrayList;
 
-public class DebugGhostService extends Service implements GhostServer.OnServerListener {
+public class DebugGhostService extends Service implements GhostServer.OnServerListener
+{
 
-    private static final String LOG_TAG = "DebugGhost";
+	private static final String LOG_TAG = "DebugGhost";
 
-    public static final String INTENT_EXTRA_DB_NAME = "INTENT_EXTRA_DB_NAME";
-    public static final String INTENT_EXTRA_DB_VERSION = "INTENT_EXTRA_DB_VERSION";
-    public static final String INTENT_EXTRA_SERVER_PORT = "INTENT_EXTRA_SERVER_PORT";
-    public static final String INTENT_EXTRA_COMMAND_MAP = "INTENT_EXTRA_COMMAND_MAP";
+	public static final String INTENT_EXTRA_DB_NAME = "INTENT_EXTRA_DB_NAME";
+	public static final String INTENT_EXTRA_DB_VERSION = "INTENT_EXTRA_DB_VERSION";
+	public static final String INTENT_EXTRA_SERVER_PORT = "INTENT_EXTRA_SERVER_PORT";
+	public static final String INTENT_EXTRA_COMMAND_MAP = "INTENT_EXTRA_COMMAND_MAP";
 
-    public static final String INTENT_FILTER_COMMANDS = "DebugGhostServiceCommandIntentFilter";
-    public static final String INTENT_SERVICE_DEBUG_COMMAND_NAME = "INTENT_SERVICE_DEBUG_COMMAND_NAME";
-    public static final String INTENT_SERVICE_DEBUG_COMMAND_VALUE = "INTENT_SERVICE_DEBUG_COMMAND_VALUE";
+	public static final String INTENT_FILTER_COMMANDS = "DebugGhostServiceCommandIntentFilter";
+	public static final String INTENT_SERVICE_DEBUG_COMMAND_NAME = "INTENT_SERVICE_DEBUG_COMMAND_NAME";
+	public static final String INTENT_SERVICE_DEBUG_COMMAND_VALUE = "INTENT_SERVICE_DEBUG_COMMAND_VALUE";
 
-    private static final String INTENT_SERVICE_FILTER = "DebugGhostServiceIntentFilter";
-    private static final String INTENT_SERVICE_ACTION = "INTENT_SERVICE_ACTION";
-    private static final int INTENT_SERVICE_ACTION_STOP_SERVICE = 1;
-    private static final int INTENT_SERVICE_ACTION_STOP_SERVER = 2;
-    private static final int INTENT_SERVICE_ACTION_START_SERVER = 3;
+	private static final String INTENT_SERVICE_FILTER = "DebugGhostServiceIntentFilter";
+	private static final String INTENT_SERVICE_ACTION = "INTENT_SERVICE_ACTION";
+	private static final int INTENT_SERVICE_ACTION_STOP_SERVICE = 1;
+	private static final int INTENT_SERVICE_ACTION_STOP_SERVER = 2;
+	private static final int INTENT_SERVICE_ACTION_START_SERVER = 3;
 
-    private static final int INTENT_SERVICE_ACTION_SHOW_GHOST_PANEL = 4;
+	private static final int INTENT_SERVICE_ACTION_SHOW_GHOST_PANEL = 4;
 
-    private static final int GHOST_NOTIFICATION_ID = 666;
+	private static final int GHOST_NOTIFICATION_ID = 666;
 
-    private GhostServer ghostServer = null;
+	private GhostServer ghostServer = null;
 
-    private WindowManager windowManager;
-    private GestureDetector gestureDetector;
-    private ImageView ivGhost;
-    private WindowManager.LayoutParams mWindowParams;
-    private boolean ghostVisible = false;
+	private WindowManager windowManager;
+	private GestureDetector gestureDetector;
+	private ImageView ivGhost;
+	private WindowManager.LayoutParams mWindowParams;
+	private boolean ghostVisible = false;
 
-    public DebugGhostService() {
-    }
+	public DebugGhostService() {
+	}
 
-    @Override
-    public IBinder onBind(Intent intent) {
-        // Not used
-        return null;
-    }
+	@Override
+	public IBinder onBind(Intent intent) {
+		// Not used
+		return null;
+	}
 
-    @Override
-    public void onCreate() {
-        super.onCreate();
+	@Override
+	public void onCreate() {
+		super.onCreate();
 
-        // the following is to show the little ghost on the screen which can be dragged
-        // some fun planned later :)
-        gestureDetector = new GestureDetector(this, new SingleTapConfirm());
-        windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
+		// the following is to show the little ghost on the screen which can be dragged
+		// some fun planned later :)
+		gestureDetector = new GestureDetector(this, new SingleTapConfirm());
+		windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
 
-        ivGhost = new ImageView(this);
-        ivGhost.setImageResource(R.drawable.ic_ghost);
+		ivGhost = new ImageView(this);
+		ivGhost.setImageResource(R.drawable.ic_ghost);
 
-        mWindowParams = new WindowManager.LayoutParams(
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.TYPE_PHONE,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-                PixelFormat.TRANSLUCENT);
+		mWindowParams = new WindowManager.LayoutParams(
+				WindowManager.LayoutParams.WRAP_CONTENT,
+				WindowManager.LayoutParams.WRAP_CONTENT,
+				WindowManager.LayoutParams.TYPE_PHONE,
+				WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+				PixelFormat.TRANSLUCENT);
 
-        mWindowParams.gravity = Gravity.TOP | Gravity.LEFT;
-        mWindowParams.x = 0;
-        mWindowParams.y = mWindowParams.height - 100;
-
-
-        configureGhost(mWindowParams);
-    }
-
-    @Override
-    public int onStartCommand(Intent intent, int flags, int startId) {
-        registerReceiver(stopServiceReceiver, new IntentFilter(INTENT_SERVICE_FILTER));
-
-        handleGhostNotification(null);
-
-        String dbName = null;
-        int dbVersion = -1;
-        int port = 8080;
-        ArrayList<String> commands = null;
-
-        if (intent != null) {
-            dbName = intent.getStringExtra(INTENT_EXTRA_DB_NAME);
-            dbVersion = intent.getIntExtra(INTENT_EXTRA_DB_VERSION, -1);
-            port = intent.getIntExtra(INTENT_EXTRA_SERVER_PORT, 8080);
-            commands = intent.getStringArrayListExtra(INTENT_EXTRA_COMMAND_MAP);
-        }
-
-        ghostServer = new GhostServer(getBaseContext(), port, dbName, dbVersion, commands);
-        ghostServer.setOnServerListener(this);
-        ghostServer.start();
-
-        return super.onStartCommand(intent, flags, startId);
-    }
-
-    private void configureGhost(final WindowManager.LayoutParams params) {
-        ivGhost.setOnTouchListener(new View.OnTouchListener() {
-            private int initialX;
-            private int initialY;
-            private float initialTouchX;
-            private float initialTouchY;
-
-            @Override public boolean onTouch(View v, MotionEvent event) {
-                if (gestureDetector.onTouchEvent(event)) {
-                    Toast.makeText(getBaseContext(), "Buhuu", Toast.LENGTH_SHORT).show();
-                    return true;
-                } else {
-                    switch (event.getAction()) {
-                        case MotionEvent.ACTION_DOWN:
-                            initialX = params.x;
-                            initialY = params.y;
-                            initialTouchX = event.getRawX();
-                            initialTouchY = event.getRawY();
-                            return true;
-                        case MotionEvent.ACTION_UP:
-                            return true;
-                        case MotionEvent.ACTION_MOVE:
-                            params.x = initialX + (int) (event.getRawX() - initialTouchX);
-                            params.y = initialY + (int) (event.getRawY() - initialTouchY);
-                            windowManager.updateViewLayout(ivGhost, params);
-                            return true;
-                    }
-                    return false;
-                }
-            }
-        });
-
-    }
-
-    @Override
-    public void onDestroy() {
-        if (ivGhost != null && ghostVisible) {
-            hideGhostPanel();
-        }
-
-        unregisterReceiver(stopServiceReceiver);
-        dismissGhostNotification();
-
-        super.onDestroy();
-    }
-
-    @Override
-    public void onServerStarted(String ip, int port) {
-        handleGhostNotification(ip + ":" + port);
-    }
-
-    @Override
-    public void onServerStopped() {
-        handleGhostNotification(null);
-    }
-
-    private void resumeServer() {
-        if (ghostServer != null){
-            ghostServer.start();
-        }
-    }
-
-    public void stopServer() {
-        if (ghostServer != null){
-            ghostServer.stop();
-        }
-    }
-
-    private class SingleTapConfirm extends GestureDetector.SimpleOnGestureListener {
-
-        @Override
-        public boolean onSingleTapUp(MotionEvent event) {
-            return true;
-        }
-
-    }
-
-    public void dismissGhostNotification() {
-        NotificationManager mNotificationManager = (NotificationManager) getBaseContext().getSystemService(Context.NOTIFICATION_SERVICE);;
-        mNotificationManager.cancel(GHOST_NOTIFICATION_ID);
-    }
-
-    @SuppressLint("NewApi")
-    public void handleGhostNotification(String serverAddress) {
-        String title = (serverAddress != null) ? LOG_TAG + " ("+serverAddress+")" : LOG_TAG;
-
-        Intent serviceIntent = new Intent(INTENT_SERVICE_FILTER);
-
-        Notification.Builder builder = new Notification.Builder(getBaseContext())
-                .setSmallIcon(R.drawable.ic_ghost)
-                .setLargeIcon(BitmapFactory.decodeResource(getResources(), R.drawable.ic_ghost))
-                .setContentTitle(title)
-                .setPriority(Notification.PRIORITY_MAX)
-                .setOngoing(true);
-
-        Intent resultIntent = new Intent(getBaseContext(), DebugGhostService.class);
-        resultIntent.putExtra(INTENT_SERVICE_ACTION, INTENT_SERVICE_ACTION_STOP_SERVICE);
-        resultIntent.setAction(Intent.ACTION_DEFAULT);
-
-        serviceIntent.putExtra(INTENT_SERVICE_ACTION, INTENT_SERVICE_ACTION_STOP_SERVICE);
-        PendingIntent resultPendingIntent = PendingIntent.getBroadcast(this, INTENT_SERVICE_ACTION_STOP_SERVICE, serviceIntent, PendingIntent.FLAG_UPDATE_CURRENT);
-        builder.setContentIntent(resultPendingIntent);
-        NotificationManager mNotificationManager = (NotificationManager) getBaseContext().getSystemService(Context.NOTIFICATION_SERVICE);
-
-        int apiLevel = Build.VERSION.SDK_INT;
-        if (apiLevel >= Build.VERSION_CODES.KITKAT_WATCH) {
-
-            Intent ghostIntent = new Intent(INTENT_SERVICE_FILTER);
-            String action;
-            int actionId = -1;
-            int iconResId = -1;
-            if (ghostServer != null && ghostServer.getStatus() == GhostServer.STATUS_RUN) {
-                builder.setSmallIcon(R.drawable.ic_start_server);
-                builder.setContentText("Server running. Click to stop service!");
-
-                action = "Stop Server";
-                iconResId = R.drawable.ic_stop_server;
-                actionId = INTENT_SERVICE_ACTION_STOP_SERVER;
-            } else {
-                builder.setContentText("Server stopped. Click to stop service!");
-                builder.setSmallIcon(R.drawable.ic_stop_server);
-                action = "Start Server";
-                iconResId = R.drawable.ic_start_server;
-                actionId = INTENT_SERVICE_ACTION_START_SERVER;
-            }
-
-            ghostIntent.putExtra(INTENT_SERVICE_ACTION, actionId);
-            PendingIntent pIntentStopServer = PendingIntent.getBroadcast(this, actionId, ghostIntent, PendingIntent.FLAG_UPDATE_CURRENT);
-            Notification.Action.Builder actionBuilder = new Notification.Action.Builder(iconResId, action, pIntentStopServer);
-
-            builder.addAction(actionBuilder.build());
-
-            Intent ghostPanelIntent = new Intent(INTENT_SERVICE_FILTER);
-            ghostPanelIntent.putExtra(INTENT_SERVICE_ACTION, INTENT_SERVICE_ACTION_SHOW_GHOST_PANEL);
-            PendingIntent pIntentShowGhost = PendingIntent.getBroadcast(this, INTENT_SERVICE_ACTION_SHOW_GHOST_PANEL, ghostPanelIntent, PendingIntent.FLAG_UPDATE_CURRENT);
-            Notification.Action.Builder actionShowGhostBuilder = new Notification.Action.Builder(R.drawable.ic_show_ghost, "Ghost", pIntentShowGhost);
-
-            builder.addAction(actionShowGhostBuilder.build());
-        }
-
-        if (apiLevel >= Build.VERSION_CODES.JELLY_BEAN){
-            mNotificationManager.notify(GHOST_NOTIFICATION_ID, builder.build());
-        } else{
-            mNotificationManager.notify(GHOST_NOTIFICATION_ID, builder.getNotification());
-        }
-
-    }
-
-    private void bustGhost() {
-        // TODO stop self seems not to be working
-        stopServer();
-        stopSelf();
-    }
+		mWindowParams.gravity = Gravity.TOP | Gravity.LEFT;
+		mWindowParams.x = 0;
+		mWindowParams.y = mWindowParams.height - 100;
 
 
-    protected BroadcastReceiver stopServiceReceiver = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            if (intent != null) {
-                int action = intent.getIntExtra(INTENT_SERVICE_ACTION, INTENT_SERVICE_ACTION_STOP_SERVICE);
+		configureGhost(mWindowParams);
+	}
 
-                switch (action) {
-                    case INTENT_SERVICE_ACTION_SHOW_GHOST_PANEL:
-                        Log.d(LOG_TAG, "Action: SHOW/HIDE GHOST_PANEL");
-                        if (ghostVisible) {
-                            hideGhostPanel();
-                        } else {
-                            showGhostPanel();
-                        }
-                        break;
-                    case INTENT_SERVICE_ACTION_STOP_SERVER:
-                        Log.d(LOG_TAG, "Action: STOP_SERVER");
-                        stopServer();
-                        break;
-                    case INTENT_SERVICE_ACTION_START_SERVER:
-                        Log.d(LOG_TAG, "Action: START_SERVER");
-                        resumeServer();
-                        break;
-                    case INTENT_SERVICE_ACTION_STOP_SERVICE:
-                        Log.d(LOG_TAG, "Action: STOP_SERVICE");
-                        bustGhost();
-                        break;
-                }
+	@Override
+	public int onStartCommand(Intent intent, int flags, int startId) {
+		registerReceiver(stopServiceReceiver, new IntentFilter(INTENT_SERVICE_FILTER));
 
-            } else {
-                Log.e(LOG_TAG, "GhostService Action should always have an actionId defined! Stopping full service because I don't know what to do!");
-                bustGhost();
-            }
-        }
-    };
+		handleGhostNotification(null);
 
-    private void showGhostPanel() {
-        ghostVisible = true;
-        windowManager.addView(ivGhost, mWindowParams);
-    }
-    private void hideGhostPanel() {
-        ghostVisible = false;
-        windowManager.removeView(ivGhost);
-    }
+		String dbName = null;
+		int dbVersion = -1;
+		int port = 8080;
+		ArrayList<String> commands = null;
+
+		if (intent != null) {
+			dbName = intent.getStringExtra(INTENT_EXTRA_DB_NAME);
+			dbVersion = intent.getIntExtra(INTENT_EXTRA_DB_VERSION, -1);
+			port = intent.getIntExtra(INTENT_EXTRA_SERVER_PORT, 8080);
+			commands = intent.getStringArrayListExtra(INTENT_EXTRA_COMMAND_MAP);
+		}
+
+		ghostServer = new GhostServer(getBaseContext(), port, dbName, dbVersion, commands);
+		ghostServer.setOnServerListener(this);
+		ghostServer.start();
+
+		return super.onStartCommand(intent, flags, startId);
+	}
+
+	@SuppressLint("ClickableViewAccessibility")
+	private void configureGhost(final WindowManager.LayoutParams params) {
+		ivGhost.setOnTouchListener(new View.OnTouchListener()
+		{
+			private int initialX;
+			private int initialY;
+			private float initialTouchX;
+			private float initialTouchY;
+
+			@Override
+			public boolean onTouch(View v, MotionEvent event) {
+				if (gestureDetector.onTouchEvent(event)) {
+					Toast.makeText(getBaseContext(), "Buhuu", Toast.LENGTH_SHORT).show();
+					return true;
+				} else {
+					switch (event.getAction()) {
+						case MotionEvent.ACTION_DOWN:
+							initialX = params.x;
+							initialY = params.y;
+							initialTouchX = event.getRawX();
+							initialTouchY = event.getRawY();
+							return true;
+						case MotionEvent.ACTION_UP:
+							return true;
+						case MotionEvent.ACTION_MOVE:
+							params.x = initialX + (int) (event.getRawX() - initialTouchX);
+							params.y = initialY + (int) (event.getRawY() - initialTouchY);
+							windowManager.updateViewLayout(ivGhost, params);
+							return true;
+					}
+					return false;
+				}
+			}
+		});
+
+	}
+
+	@Override
+	public void onDestroy() {
+		if (ivGhost != null && ghostVisible) {
+			hideGhostPanel();
+		}
+
+		unregisterReceiver(stopServiceReceiver);
+		dismissGhostNotification();
+
+		super.onDestroy();
+	}
+
+	@Override
+	public void onServerStarted(String ip, int port) {
+		handleGhostNotification(ip + ":" + port);
+	}
+
+	@Override
+	public void onServerStopped() {
+		handleGhostNotification(null);
+	}
+
+	private void resumeServer() {
+		if (ghostServer != null) {
+			ghostServer.start();
+		}
+	}
+
+	public void stopServer() {
+		if (ghostServer != null) {
+			ghostServer.stop();
+		}
+	}
+
+	private class SingleTapConfirm extends GestureDetector.SimpleOnGestureListener
+	{
+
+		@Override
+		public boolean onSingleTapUp(MotionEvent event) {
+			return true;
+		}
+
+	}
+
+	public void dismissGhostNotification() {
+		NotificationManager mNotificationManager = (NotificationManager) getBaseContext().getSystemService(Context.NOTIFICATION_SERVICE);
+		;
+		mNotificationManager.cancel(GHOST_NOTIFICATION_ID);
+	}
+
+	@SuppressLint("NewApi")
+	public void handleGhostNotification(String serverAddress) {
+		RegisterNotificationChannel();
+
+		String title = (serverAddress != null) ? LOG_TAG + " (" + serverAddress + ")" : LOG_TAG;
+
+		Intent serviceIntent = new Intent(INTENT_SERVICE_FILTER);
+
+		Notification.Builder builder = new Notification.Builder(getBaseContext(), ChannelID)
+				.setSmallIcon(R.drawable.ic_ghost)
+				.setLargeIcon(BitmapFactory.decodeResource(getResources(), R.drawable.ic_ghost))
+				.setContentTitle(title)
+				.setPriority(Notification.PRIORITY_MAX)
+				.setOngoing(true);
+
+		Intent resultIntent = new Intent(getBaseContext(), DebugGhostService.class);
+		resultIntent.putExtra(INTENT_SERVICE_ACTION, INTENT_SERVICE_ACTION_STOP_SERVICE);
+		resultIntent.setAction(Intent.ACTION_DEFAULT);
+
+		serviceIntent.putExtra(INTENT_SERVICE_ACTION, INTENT_SERVICE_ACTION_STOP_SERVICE);
+		PendingIntent resultPendingIntent = PendingIntent.getBroadcast(this, INTENT_SERVICE_ACTION_STOP_SERVICE, serviceIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+		builder.setContentIntent(resultPendingIntent);
+		NotificationManager mNotificationManager = (NotificationManager) getBaseContext().getSystemService(Context.NOTIFICATION_SERVICE);
+
+		int apiLevel = Build.VERSION.SDK_INT;
+		if (apiLevel >= Build.VERSION_CODES.KITKAT_WATCH) {
+
+			Intent ghostIntent = new Intent(INTENT_SERVICE_FILTER);
+			String action;
+			int actionId = -1;
+			int iconResId = -1;
+			if (ghostServer != null && ghostServer.getStatus() == GhostServer.STATUS_RUN) {
+				builder.setSmallIcon(R.drawable.ic_start_server);
+				builder.setContentText("Server running. Click to stop service!");
+
+				action = "Stop Server";
+				iconResId = R.drawable.ic_stop_server;
+				actionId = INTENT_SERVICE_ACTION_STOP_SERVER;
+			} else {
+				builder.setContentText("Server stopped. Click to stop service!");
+				builder.setSmallIcon(R.drawable.ic_stop_server);
+				action = "Start Server";
+				iconResId = R.drawable.ic_start_server;
+				actionId = INTENT_SERVICE_ACTION_START_SERVER;
+			}
+
+			ghostIntent.putExtra(INTENT_SERVICE_ACTION, actionId);
+			PendingIntent pIntentStopServer = PendingIntent.getBroadcast(this, actionId, ghostIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+			Notification.Action.Builder actionBuilder = new Notification.Action.Builder(iconResId, action, pIntentStopServer);
+
+			builder.addAction(actionBuilder.build());
+
+			Intent ghostPanelIntent = new Intent(INTENT_SERVICE_FILTER);
+			ghostPanelIntent.putExtra(INTENT_SERVICE_ACTION, INTENT_SERVICE_ACTION_SHOW_GHOST_PANEL);
+			PendingIntent pIntentShowGhost = PendingIntent.getBroadcast(this, INTENT_SERVICE_ACTION_SHOW_GHOST_PANEL, ghostPanelIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+			Notification.Action.Builder actionShowGhostBuilder = new Notification.Action.Builder(R.drawable.ic_show_ghost, "Ghost", pIntentShowGhost);
+
+			builder.addAction(actionShowGhostBuilder.build());
+		}
+
+		if (apiLevel >= Build.VERSION_CODES.JELLY_BEAN) {
+			mNotificationManager.notify(GHOST_NOTIFICATION_ID, builder.build());
+		} else {
+			mNotificationManager.notify(GHOST_NOTIFICATION_ID, builder.getNotification());
+		}
+
+	}
+
+
+	private final String ChannelID = "DebugGhostNotificationChannel";
+
+	private void RegisterNotificationChannel() {
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+			NotificationManager notificationManager = getApplicationContext().getSystemService(NotificationManager.class);
+			assert notificationManager != null;
+
+			notificationManager.deleteNotificationChannel(ChannelID);
+
+			NotificationChannel notificationChannel = new NotificationChannel(ChannelID, "Browse Database", NotificationManager.IMPORTANCE_HIGH);
+			notificationChannel.enableLights(false);
+			notificationChannel.setSound(null, null);
+			notificationChannel.enableVibration(false);
+			notificationChannel.setBypassDnd(true);
+			notificationChannel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
+			notificationChannel.setShowBadge(false);
+			notificationManager.createNotificationChannel(notificationChannel);
+		}
+	}
+
+	private void bustGhost() {
+		// TODO stop self seems not to be working
+		stopServer();
+		stopSelf();
+	}
+
+
+	protected BroadcastReceiver stopServiceReceiver = new BroadcastReceiver()
+	{
+		@Override
+		public void onReceive(Context context, Intent intent) {
+			if (intent != null) {
+				int action = intent.getIntExtra(INTENT_SERVICE_ACTION, INTENT_SERVICE_ACTION_STOP_SERVICE);
+
+				switch (action) {
+					case INTENT_SERVICE_ACTION_SHOW_GHOST_PANEL:
+						Log.d(LOG_TAG, "Action: SHOW/HIDE GHOST_PANEL");
+						if (ghostVisible) {
+							hideGhostPanel();
+						} else {
+							showGhostPanel();
+						}
+						break;
+					case INTENT_SERVICE_ACTION_STOP_SERVER:
+						Log.d(LOG_TAG, "Action: STOP_SERVER");
+						stopServer();
+						break;
+					case INTENT_SERVICE_ACTION_START_SERVER:
+						Log.d(LOG_TAG, "Action: START_SERVER");
+						resumeServer();
+						break;
+					case INTENT_SERVICE_ACTION_STOP_SERVICE:
+						Log.d(LOG_TAG, "Action: STOP_SERVICE");
+						bustGhost();
+						break;
+				}
+
+			} else {
+				Log.e(LOG_TAG, "GhostService Action should always have an actionId defined! Stopping full service because I don't know what to do!");
+				bustGhost();
+			}
+		}
+	};
+
+	private void showGhostPanel() {
+		ghostVisible = true;
+		windowManager.addView(ivGhost, mWindowParams);
+	}
+
+	private void hideGhostPanel() {
+		ghostVisible = false;
+		windowManager.removeView(ivGhost);
+	}
 
 }

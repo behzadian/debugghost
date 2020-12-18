@@ -18,9 +18,10 @@ import java.util.Map;
  * Created by norbertmoehring on 05/12/2016.
  */
 
-public abstract class AbstractDebugGhostBridge {
+public class DebugGhostBridge
+{
 
-    private static final String LOG_TAG = AbstractDebugGhostBridge.class.getSimpleName();
+    private static final String LOG_TAG = DebugGhostBridge.class.getSimpleName();
 
     private GhostCommandBroadcastReceiver mCommandBroadcastReceiver = new GhostCommandBroadcastReceiver();
 
@@ -33,17 +34,17 @@ public abstract class AbstractDebugGhostBridge {
 
     private Map<String, GhostCommand> mGhostCommands = new HashMap<>();
 
-    public AbstractDebugGhostBridge(Context context) {
+    public DebugGhostBridge(Context context) {
         this(context, null, -1);
     }
 
-    public AbstractDebugGhostBridge(Context context, String databaseName, int databaseVersion) {
+    public DebugGhostBridge(Context context, String databaseName, int databaseVersion) {
         this(context, databaseName, databaseVersion, 8080);
 
         addInternalGhostCommand(new SharedPrefsGhostCommand(context, "internal_ghost_shared_prefs_command", "internal_ghost_shared_prefs_command", " "));
     }
 
-    public AbstractDebugGhostBridge(Context context, String databaseName, int databaseVersion, int serverPort) {
+    public DebugGhostBridge(Context context, String databaseName, int databaseVersion, int serverPort) {
         this.mContext = context;
         this.mDatabaseName = databaseName;
         this.mDatabaseVersion = databaseVersion;
