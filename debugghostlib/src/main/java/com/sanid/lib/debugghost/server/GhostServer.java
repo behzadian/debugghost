@@ -242,7 +242,7 @@ public class GhostServer {
             while ((line = in.readLine()) != null && (line.length() != 0)) {
 //                System.out.println("HTTP-HEADER: " + line);
                 if (line.indexOf("Content-Length:") > -1) {
-                    postDataI = new Integer(
+                    postDataI = Integer.valueOf(
                             line.substring(
                                     line.indexOf("Content-Length:") + 16,
                                     line.length())).intValue();
