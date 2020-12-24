@@ -32,3 +32,4 @@ node_modules
 surefire-reports
 test-classes/
 *.log
+/debugghostlib/nexus.gradle

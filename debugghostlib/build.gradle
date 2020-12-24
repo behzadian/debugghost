@@ -1,8 +1,7 @@
 plugins {
     id 'com.android.library'
-    id "maven"
-    id "maven-publish"
     id 'com.github.dcendents.android-maven'
+    id "maven-publish"
 }
 
 group = 'com.github.behzadian'
@@ -47,3 +46,4 @@ dependencies {
     testImplementation 'junit:junit:4.13.1'
 }
 
+//apply from: 'nexus.gradle'
